@@ -1,0 +1,12 @@
+all:
+  infra_vlan: 4093
+  kubeapi_vlan: 3
+  service_vlan: 202
+  network_interfaces:
+   node:
+     mtu: 1500
+   opflex:
+     mtu: 1700
+  os_compute_nodes_number: 2
+  os_cp_nodes_number: 3
+
