@@ -120,7 +120,8 @@ METRIC0=1000
     route_opflex_conn_b64 = base64.standard_b64encode(route_opflex_conn).decode().strip()
 
     config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
-    ignition['storage'] = {}
+    if 'storage' not in ignition.keys():
+        ignition['storage'] = {}
     files = ignition['storage'].get('files', [])
     hostname_b64 = base64.standard_b64encode(hostname).decode().strip()
     files.append(
