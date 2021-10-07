@@ -8,6 +8,9 @@
 #2 Machine Names: The machine hostnames are based on <Infra-Id>-<bootstrap/master/worker>-<Number>
 #3 Ignition Files: The new ignition files generated as per node viz. <Infra-Id>-bootstrap/master/worker-<index>-ignition.json 
 #4 config.yaml: The script requires user-defined input file - config.yaml to be configured proper
+#5 Bond Configuration: This setup has 3 interfaces - 1 Management/Node Network and 2 Passthrough Nics for Infra Network. 
+#These passthrough Nics are in bond configuration and the script creates the respective bond configuration for them. Hence, the script should be modified accordingly
+#for the setups with single interface machines or without bond configuration. 
 
 #Script Run: python3 update_ign.py
 
