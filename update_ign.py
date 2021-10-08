@@ -1,22 +1,32 @@
-#The script does the following things:
-#Update boostrap.ign with hostname.
-#According to the number of the master count, create the JSON files, and add hostname/network-scripts.
-#According to the number of the worker count, create the JSON files, and add hostname/network-scripts.
+# This script is based on the information provided here:
+# https://github.com/openshift/installer/blob/release-4.7/docs/user/openstack/install_upi.md
+#
+# Before running this script please update the config.yaml in this directory
 
-#Assumptions
-#1 Interface Names: The RHCOS-4.6 OS Machines comes up with defined interface names viz. ens2, ens4, ens5
-#2 Machine Names: The machine hostnames are based on <Infra-Id>-<bootstrap/master/worker>-<Number>
-#3 Ignition Files: The new ignition files generated as per node viz. <Infra-Id>-bootstrap/master/worker-<index>-ignition.json 
-#4 config.yaml: The script requires user-defined input file - config.yaml to be configured proper
-#5 Bond Configuration: This setup has 3 interfaces - 1 Management/Node Network and 2 Passthrough Nics for Infra Network. 
-#These passthrough Nics are in bond configuration and the script creates the respective bond configuration for them. Hence, the script should be modified accordingly
-#for the setups with single interface machines or without bond configuration. 
+# This script does the following:
+#  Inserts hostname into the boostrap.ign
+#  Creates the ignition files for each master and worker node, and inserts the hostname and network-scripts into those
 
-#Script Run: python3 update_ign.py
+# Assumptions:
+# Interface names in RHCOS-4.x based nodes have the inteface naming convention: ens2, ens4, ens5
+#
+# Hostnames are assigned by this script using the convention: <Infra-Id>-<bootstrap|master|worker>-<Number>
+#
+# Ignition file names follow the convention:  <Infra-Id>-bootstrap|master|worker-<index>-ignition.json 
+#
+# Network interfaces: This script assumes that each node has three interfaces -
+#                     - one for node Network
+#                     - the second and third in bonded configuration for the ACI Infra Network (the pod traffic also goes over this) 
+#                     If the nodes have only two network inferfaces, then there can be no bonding. Similarly, if the node
+#                     has four or more interfaces then you can choose to have bonded pairs for both the node and infra networks.
+#                     In either of those cases this script will have to be modified to account for those differences.
 
-#Expected Output: Igniton files <Infra-Id>-bootstrap/master/worker-<index>-ignition.json
+# How to run this script: python3 update_ign.py
 
-#Expected Usage: The updated ignition files then can be used to bring up bootstrap and control plane via ansible playbooks
+# Expected Output: Igniton files for each of the nodes including the bootstrap with the names: <Infra-Id>-bootstrap|master|worker-<index>-ignition.json
+
+# What to do after running this script: Copy the generated ignition files to directory where they will be served from at install time, and proceed with
+# the installation.
 
 import base64
 import json
