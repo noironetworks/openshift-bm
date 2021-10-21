@@ -38,201 +38,379 @@ from jinja2 import Environment, FileSystemLoader
 
 
 
-# Read config.yaml for CiscoACI CNI variable
-original_inventory = "config.yaml"
-with open(original_inventory, 'r') as stream:
-    try:
-        inventory = yaml.safe_load(stream)['all']
-    except yaml.YAMLError as exc:
-        print(exc)
+class OpenshiftOnBareMetal:
 
-infra_vlan = str(inventory['infra_vlan'])
-service_vlan = str(inventory['service_vlan'])
-kubeapi_vlan = str(inventory['kubeapi_vlan'])
-master_count = inventory['os_cp_nodes_number']
-worker_count = inventory['os_compute_nodes_number']
-node_network_mtu = str(inventory['network_interfaces']['node']['mtu'])
-opflex_network_mtu = str(inventory['network_interfaces']['opflex']['mtu'])
+    def __init__(self):
 
-def update(hostname,ignition):
+        # Read config.yaml for CiscoACI CNI variable
+        original_inventory = "config.yaml"
+        with open(original_inventory, 'r') as stream:
+            try:
+                inventory = yaml.safe_load(stream)['all']
+            except yaml.YAMLError as exc:
+                print(exc)
 
-    config_data = {}
-
-    ifcfg_bond0 = ("""NAME="bond0"
-DEVICE="bond0"
-ONBOOT=yes
-NETBOOT=yes
-BOOTPROTO=none
-BONDING_MASTER=yes
-BONDING_OPTS="mode=4 miimon=100 lacp_rate=1"
-NAME="bond0"
-TYPE=Bond
-MTU=""" + opflex_network_mtu + """
-""").encode()
-
-    ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
-
-    config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
-
-    ifcfg_ens4 = ("""NAME="ens4"
-TYPE=Ethernet
-ONBOOT=yes
-NETBOOT=yes
-SLAVE=yes
-MASTER="bond0"
-DEVICE="ens4"
-MTU=""" + opflex_network_mtu + """
-""").encode()
-
-    ifcfg_ens4_b64 = base64.standard_b64encode(ifcfg_ens4).decode().strip()
-
-    config_data['ifcfg_ens4'] = {'base64': ifcfg_ens4_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-ens4'}
-
-    ifcfg_ens5 = ("""NAME="ens5"
-TYPE=Ethernet
-ONBOOT=yes
-NETBOOT=yes
-SLAVE=yes
-MASTER="bond0"
-DEVICE="ens5"
-MTU=""" + opflex_network_mtu + """
-""").encode()
-
-    ifcfg_ens5_b64 = base64.standard_b64encode(ifcfg_ens5).decode().strip()
-
-    config_data['ifcfg_ens5'] = {'base64': ifcfg_ens5_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-ens5'}
-
-    opflex_conn = ("""VLAN=yes
-TYPE=Vlan
-PHYSDEV=bond0
-VLAN_ID=""" + infra_vlan + """
-REORDER_HDR=yes
-GVRP=no
-MVRP=no
-PROXY_METHOD=none
-BROWSER_ONLY=no
-BOOTPROTO=dhcp
-DEFROUTE=yes
-IPV4_FAILURE_FATAL=no
-IPV6INIT=no
-NAME=opflex-conn
-DEVICE=""" + """bond0.""" + infra_vlan + """
-ONBOOT=yes
-MTU=""" + opflex_network_mtu + """
-""").encode()
-
-    ifcfg_opflex_conn_b64 = base64.standard_b64encode(opflex_conn).decode().strip()
-
-    config_data['ifcfg_opflex_conn'] = {'base64': ifcfg_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-opflex-conn'}
-
-    route_opflex_conn = """ADDRESS0=224.0.0.0
-NETMASK0=240.0.0.0
-METRIC0=1000
-""".encode()
-
-    route_opflex_conn_b64 = base64.standard_b64encode(route_opflex_conn).decode().strip()
-
-    config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
-    if 'storage' not in ignition.keys():
-        ignition['storage'] = {}
-    files = ignition['storage'].get('files', [])
-    hostname_b64 = base64.standard_b64encode(hostname).decode().strip()
-    files.append(
-        {
-            'path': '/etc/hostname',
-            'mode': 420,
-            'contents': {
-                'source': 'data:text/plain;charset=utf-8;base64,' + hostname_b64,
-                'verification': {}
-            },
-            'filesystem': 'root',
-        })
-
-    if 'bootstrap' not in hostname.decode():
-
-         files.append(
-             {
-                 'path': config_data['ifcfg_bond0']['path'],
-                 'mode': 420,
-                 'contents': {
-                     'source': 'data:text/plain;charset=utf-8;base64,' + config_data['ifcfg_bond0']['base64'],
-                     'verification': {}
-                 },
-                 'filesystem': 'root',
-             })
+        self.infra_vlan = str(inventory['infra_vlan'])
+        self.service_vlan = str(inventory['service_vlan'])
+        self.kubeapi_vlan = str(inventory['kubeapi_vlan'])
+        self.master_count = inventory['os_cp_nodes_number']
+        self.worker_count = inventory['os_compute_nodes_number']
+        self.node_network_mtu = str(inventory['network_interfaces']['node']['mtu'])
+        self.opflex_network_mtu = str(inventory['network_interfaces']['opflex']['mtu'])
+        self.node_network_interface = list(inventory["node_network_interface"])
+        self.aci_infra_network_interface = list(inventory["aci_infra_network_interface"])
 
 
-         files.append(
-             {
-                 'path': config_data['ifcfg_ens4']['path'],
-                 'mode': 420,
-                 'contents': {
-                     'source': 'data:text/plain;charset=utf-8;base64,' + config_data['ifcfg_ens4']['base64'],
-                     'verification': {}
-                 },
-                 'filesystem': 'root',
-             })
+    def create_bond(self, bond_name, mtu):
 
-         files.append(
-             {
-                 'path': config_data['ifcfg_ens5']['path'],
-                 'mode': 420,
-                 'contents': {
-                     'source': 'data:text/plain;charset=utf-8;base64,' + config_data['ifcfg_ens5']['base64'],
-                     'verification': {}
-                 },
-                 'filesystem': 'root',
-             })
-
-         files.append(
-             {
-                 'path': config_data['ifcfg_opflex_conn']['path'],
-                 'mode': 420,
-                 'contents': {
-                     'source': 'data:text/plain;charset=utf-8;base64,' + config_data['ifcfg_opflex_conn']['base64'],
-                     'verification': {}
-                 },
-                 'filesystem': 'root',
-             })
-
-         files.append(
-             {
-                 'path': config_data['route_opflex_conn']['path'],
-                 'mode': 420,
-                 'contents': {
-                     'source': 'data:text/plain;charset=utf-8;base64,' + config_data['route_opflex_conn']['base64'],
-                     'verification': {}
-                 },
-                 'filesystem': 'root',
-             })
-
-    ignition['storage']['files'] = files
-    return ignition
+        ifcfg_bond0 = ("""NAME=""" + bond_name +"""
+            DEVICE=""" + bond_name + """
+            ONBOOT=yes
+            NETBOOT=yes
+            BOOTPROTO=none
+            BONDING_MASTER=yes
+            BONDING_OPTS="mode=4 miimon=100 lacp_rate=1"
+            NAME=""" + bond_name + """
+            TYPE=Bond
+            MTU=""" + mtu + """
+            """).encode()
+        return ifcfg_bond0
 
 
-infra_id = os.environ.get('INFRA_ID', 'openshift').encode()
+    def create_interface_with_bond(self, interface_name, bond_name, mtu):
 
-with open('bootstrap.ign', 'r') as f:
-    ignition = json.load(f)
-bootstrap_hostname = infra_id + b'-bootstrap\n'
-ignition = update(bootstrap_hostname,ignition)
-with open('bootstrap.ign', 'w') as f:
-    json.dump(ignition, f)
+        ifcfg_ens4 = ("""NAME=""" + interface_name +"""
+            TYPE=Ethernet
+            ONBOOT=yes
+            NETBOOT=yes
+            SLAVE=yes
+            MASTER="""+bond_name+"""
+            DEVICE=""" + interface_name +"""
+            MTU=""" + mtu + """
+            """).encode()
+        return ifcfg_ens4
 
-for index in range(0,master_count):
-    master_hostname = infra_id + b'-master-' + str(index).encode() + b'\n'
-    with open('master.ign', 'r') as f:
+    def create_interface(self, interface_name, mtu):
+        ifcfg_ens4 = ("""NAME=""" + interface_name +"""
+            TYPE=Ethernet
+            ONBOOT=yes
+            NETBOOT=yes
+            DEVICE=""" + interface_name +"""
+            MTU=""" + mtu + """
+            """).encode()
+        return ifcfg_ens4
+    
+
+
+    def update(self, hostname,ignition, choice):
+
+        config_data = {}
+        if choice == 1:
+
+            """ Single interface for node network and bond interface for infra network """
+            
+            ifcfg_bond0 = self.create_bond("bond0", self.opflex_network_mtu)
+            ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
+            config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
+
+
+            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
+            ifcfg_ens4 = self.create_interface_with_bond(self.aci_infra_network_interface[0], "bond0", self.opflex_network_mtu)
+            ifcfg_ens4_b64 = base64.standard_b64encode(ifcfg_ens4).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens4_b64, 'path': '/etc/sysconfig/network-scripts/'+ interface_name}
+
+            interface_name = "ifcfg-" + self.aci_infra_network_interface[1]
+            ifcfg_ens5 = self.create_interface_with_bond(self.aci_infra_network_interface[1], "bond0", self.opflex_network_mtu)
+            ifcfg_ens5_b64 = base64.standard_b64encode(ifcfg_ens5).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens5_b64, 'path': '/etc/sysconfig/network-scripts/' +  interface_name}
+
+            opflex_conn = ("""VLAN=yes
+        TYPE=Vlan
+        PHYSDEV=bond0
+        VLAN_ID=""" + self.infra_vlan + """
+        REORDER_HDR=yes
+        GVRP=no
+        MVRP=no
+        PROXY_METHOD=none
+        BROWSER_ONLY=no
+        BOOTPROTO=dhcp
+        DEFROUTE=yes
+        IPV4_FAILURE_FATAL=no
+        IPV6INIT=no
+        NAME=opflex-conn
+        DEVICE=""" + """bond0.""" + self.infra_vlan + """
+        ONBOOT=yes
+        MTU=""" + self.opflex_network_mtu + """
+        """).encode()
+
+            ifcfg_opflex_conn_b64 = base64.standard_b64encode(opflex_conn).decode().strip()
+
+            config_data['ifcfg_opflex_conn'] = {'base64': ifcfg_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-opflex-conn'}
+
+            route_opflex_conn = """ADDRESS0=224.0.0.0
+        NETMASK0=240.0.0.0
+        METRIC0=1000
+        """.encode()
+
+            route_opflex_conn_b64 = base64.standard_b64encode(route_opflex_conn).decode().strip()
+
+            config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
+
+        elif choice == 2:
+            """  Bond interface for both node and infra networks """
+
+
+            ifcfg_bond0 = self.create_bond("bond0", self.node_network_mtu)
+            ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
+            config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
+
+            interface_name = "ifcfg-" + self.node_network_interface[0]
+            ifcfg_ens4 = self.create_interface_with_bond(self.node_network_interface[0], "bond0", self.node_network_mtu)
+            ifcfg_ens4_b64 = base64.standard_b64encode(ifcfg_ens4).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens4_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+
+            interface_name = "ifcfg-" + self.node_network_interface[1]
+             
+            ifcfg_ens5 = self.create_interface_with_bond(self.node_network_interface[1], "bond0", self.node_network_mtu)
+            ifcfg_ens5_b64 = base64.standard_b64encode(ifcfg_ens5).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens5_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+
+
+
+            ifcfg_bond1 = self.create_bond("bond1", self.opflex_network_mtu)
+            ifcfg_bond1_b64 = base64.standard_b64encode(ifcfg_bond1).decode().strip()
+            config_data['ifcfg_bond1'] = {'base64': ifcfg_bond1_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond1'}
+
+            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
+            ifcfg_ens2 = self.create_interface_with_bond(self.aci_infra_network_interface[0], "bond1", self.opflex_network_mtu)
+            ifcfg_ens2_b64 = base64.standard_b64encode(ifcfg_ens2).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens2_b64, 'path': '/etc/sysconfig/network-scripts/'  + interface_name}
+             
+            interface_name = "ifcfg-" + self.aci_infra_network_interface[1]
+
+            ifcfg_ens3 = self.create_interface_with_bond(self.aci_infra_network_interface[1], "bond1", self.opflex_network_mtu)
+            ifcfg_ens3_b64 = base64.standard_b64encode(ifcfg_ens3).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens3_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+
+            opflex_conn = ("""VLAN=yes
+        TYPE=Vlan
+        PHYSDEV=bond1
+        VLAN_ID=""" + self.infra_vlan + """
+        REORDER_HDR=yes
+        GVRP=no
+        MVRP=no
+        PROXY_METHOD=none
+        BROWSER_ONLY=no
+        BOOTPROTO=dhcp
+        DEFROUTE=yes
+        IPV4_FAILURE_FATAL=no
+        IPV6INIT=no
+        NAME=opflex-conn
+        DEVICE=""" + """bond1.""" + self.infra_vlan + """
+        ONBOOT=yes
+        MTU=""" + self.opflex_network_mtu + """
+        """).encode()
+
+            ifcfg_opflex_conn_b64 = base64.standard_b64encode(opflex_conn).decode().strip()
+
+            config_data['ifcfg_opflex_conn'] = {'base64': ifcfg_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-opflex-conn'}
+
+            route_opflex_conn = """ADDRESS0=224.0.0.0
+        NETMASK0=240.0.0.0
+        METRIC0=1000
+        """.encode()
+
+            route_opflex_conn_b64 = base64.standard_b64encode(route_opflex_conn).decode().strip()
+
+            config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
+
+
+
+        elif choice == 3:
+
+            """ Bond interface for node network and single interface for infra network"""
+            
+            ifcfg_bond0 = self.create_bond("bond0", self.node_network_mtu)
+            ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
+            config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
+
+            interface_name = "ifcfg-" + self.node_network_interface[0]
+
+            ifcfg_ens4 = self.create_interface_with_bond(self.node_network_interface[0], "bond0", self.node_network_mtu)
+            ifcfg_ens4_b64 = base64.standard_b64encode(ifcfg_ens4).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens4_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+            
+            interface_name = "ifcfg-" + self.node_network_interface[1]
+            ifcfg_ens5 = self.create_interface_with_bond(self.node_network_interface[1], "bond0", self.node_network_mtu)
+            ifcfg_ens5_b64 = base64.standard_b64encode(ifcfg_ens5).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens5_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+
+            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
+            ifcfg_ens6 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
+            ifcfg_ens6_b64 = base64.standard_b64encode(ifcfg_ens6).decode().strip()
+            config_data[interface_name] = {'base64': ifcfg_ens6_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+
+
+            opflex_conn = ("""VLAN=yes
+        TYPE=Vlan
+        VLAN_ID=""" + self.infra_vlan + """
+        REORDER_HDR=yes
+        GVRP=no
+        MVRP=no
+        PROXY_METHOD=none
+        BROWSER_ONLY=no
+        BOOTPROTO=dhcp
+        DEFROUTE=yes
+        IPV4_FAILURE_FATAL=no
+        IPV6INIT=no
+        NAME=opflex-conn
+        DEVICE= """ + self.aci_infra_network_interface[0] +"."+ self.infra_vlan + """
+        ONBOOT=yes
+        MTU=""" + self.opflex_network_mtu + """
+        """).encode()
+
+            ifcfg_opflex_conn_b64 = base64.standard_b64encode(opflex_conn).decode().strip()
+
+            config_data['ifcfg_opflex_conn'] = {'base64': ifcfg_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-opflex-conn'}
+
+            route_opflex_conn = """ADDRESS0=224.0.0.0
+        NETMASK0=240.0.0.0
+        METRIC0=1000
+        """.encode()
+
+            route_opflex_conn_b64 = base64.standard_b64encode(route_opflex_conn).decode().strip()
+
+            config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
+
+        else:
+            
+            """single interface for both node and infra networks"""
+
+            ifcfg_ens6 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
+            ifcfg_ens6_b64 = base64.standard_b64encode(ifcfg_ens6).decode().strip()
+            config_data['ifcfg_ens6'] = {'base64': ifcfg_ens6_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-ens6'}
+
+            
+            opflex_conn = ("""VLAN=yes
+                TYPE=Vlan
+                VLAN_ID=""" + self.infra_vlan + """
+                REORDER_HDR=yes
+                GVRP=no
+                MVRP=no
+                PROXY_METHOD=none
+                BROWSER_ONLY=no
+                BOOTPROTO=dhcp
+                DEFROUTE=yes
+                IPV4_FAILURE_FATAL=no
+                IPV6INIT=no
+                NAME=opflex-conn
+                DEVICE= """ + self.aci_infra_network_interface[0] +"."+ self.infra_vlan + """
+                ONBOOT=yes
+                MTU=""" + self.opflex_network_mtu + """
+                """).encode()
+
+            ifcfg_opflex_conn_b64 = base64.standard_b64encode(opflex_conn).decode().strip()
+
+            config_data['ifcfg_opflex_conn'] = {'base64': ifcfg_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-opflex-conn'}
+
+            route_opflex_conn = """ADDRESS0=224.0.0.0
+            NETMASK0=240.0.0.0
+            METRIC0=1000
+            """.encode()
+
+            route_opflex_conn_b64 = base64.standard_b64encode(route_opflex_conn).decode().strip()
+
+            config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
+
+
+
+
+
+        if 'storage' not in ignition.keys():
+            ignition['storage'] = {}
+        files = ignition['storage'].get('files', [])
+        hostname_b64 = base64.standard_b64encode(hostname).decode().strip()
+        files.append(
+            {
+                'path': '/etc/hostname',
+                'mode': 420,
+                'contents': {
+                    'source': 'data:text/plain;charset=utf-8;base64,' + hostname_b64,
+                    'verification': {}
+                },
+                'filesystem': 'root',
+            })
+
+        if 'bootstrap' not in hostname.decode():
+
+            for k, v in config_data.items():
+                files.append(
+                    {
+                    'path': v['path'],
+                    'mode': 420,
+                    'contents': {
+                    'source': 'data:text/plain;charset=utf-8;base64,' + v['base64'],
+                    'verification': {}
+                    },
+                    'filesystem': 'root',
+                })
+
+
+
+        ignition['storage']['files'] = files
+        return ignition
+
+
+            
+
+
+
+if __name__ == "__main__":
+    print("""
+        1.Single interface for node network and bond interface for infra network
+        2.Bond interface for both node and infra networks
+        3.Bond interface for node network and single interface for infra network
+        4.Single interface for both node and infra networks
+        """)
+    ans=input("Which option would you like to choose? ")
+    if ans=="1":
+        choice = 1
+    elif ans=="2":
+        choice = 2
+    elif ans == "3":
+        choice = 3
+    elif ans == "4":
+        choice = 4
+    else:
+        print("\n   Invalid Option, Please Try Again")
+
+
+
+    infra_id = os.environ.get('INFRA_ID', 'openshift').encode()
+
+    openshiftOnBaremetal = OpenshiftOnBareMetal()
+
+    with open('bootstrap.ign', 'r') as f:
         ignition = json.load(f)
-    ignition = update(master_hostname,ignition)
-    with open(infra_id.decode() + '-master-' + str(index) + '-ignition.json', 'w') as f:
+    bootstrap_hostname = infra_id + b'-bootstrap\n'
+    ignition = openshiftOnBaremetal.update(bootstrap_hostname,ignition, choice)
+    with open('bootstrap.ign', 'w') as f:
         json.dump(ignition, f)
 
-for index in range(0,worker_count):
-    master_hostname = infra_id + b'-worker-' + str(index).encode() + b'\n'
-    with open('worker.ign', 'r') as f:
-        ignition = json.load(f)
-    ignition = update(master_hostname,ignition)
-    with open(infra_id.decode() + '-worker-' + str(index) + '-ignition.json', 'w') as f:
-        json.dump(ignition, f)
+    for index in range(0, openshiftOnBaremetal.master_count):
+        master_hostname = infra_id + b'-master-' + str(index).encode() + b'\n'
+        with open('master.ign', 'r') as f:
+            ignition = json.load(f)
+        ignition = openshiftOnBaremetal.update(master_hostname,ignition, choice)
+        with open(infra_id.decode() + '-master-' + str(index) + '-ignition.json', 'w') as f:
+            json.dump(ignition, f)
+
+    for index in range(0, openshiftOnBaremetal.worker_count):
+        master_hostname = infra_id + b'-worker-' + str(index).encode() + b'\n'
+        with open('worker.ign', 'r') as f:
+            ignition = json.load(f)
+        ignition = openshiftOnBaremetal.update(master_hostname,ignition, choice)
+        with open(infra_id.decode() + '-worker-' + str(index) + '-ignition.json', 'w') as f:
+            json.dump(ignition, f)
 
 
