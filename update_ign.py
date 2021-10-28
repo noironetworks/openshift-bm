@@ -21,7 +21,19 @@
 #                     has four or more interfaces then you can choose to have bonded pairs for both the node and infra networks.
 #                     In either of those cases this script will have to be modified to account for those differences.
 
-# How to run this script: python3 update_ign.py
+#               we will have following option to choose from 
+#                    1.Single interface for node network and bond interface for infra network
+#                    2.Bond interface for both node and infra networks
+#                    3.Bond interface for node network and single interface for infra network
+#                    4.Single interface for both node and infra networks
+#
+#
+#               currently we support option one only(please update interface name in config.yaml file)
+
+
+# How to run this script: 
+#           Please update the config.yaml file before running this script
+#           Trigger the command after changing config.yaml file according to requirement:   python3 update_ign.py
 
 # Expected Output: Igniton files for each of the nodes including the bootstrap with the names: <Infra-Id>-bootstrap|master|worker-<index>-ignition.json
 
@@ -79,7 +91,7 @@ class OpenshiftOnBareMetal:
 
     def create_interface_with_bond(self, interface_name, bond_name, mtu):
 
-        ifcfg_ens4 = ("""NAME=""" + interface_name +"""
+        interface = ("""NAME=""" + interface_name +"""
             TYPE=Ethernet
             ONBOOT=yes
             NETBOOT=yes
@@ -88,17 +100,17 @@ class OpenshiftOnBareMetal:
             DEVICE=""" + interface_name +"""
             MTU=""" + mtu + """
             """).encode()
-        return ifcfg_ens4
+        return interface
 
     def create_interface(self, interface_name, mtu):
-        ifcfg_ens4 = ("""NAME=""" + interface_name +"""
+        interface = ("""NAME=""" + interface_name +"""
             TYPE=Ethernet
             ONBOOT=yes
             NETBOOT=yes
             DEVICE=""" + interface_name +"""
             MTU=""" + mtu + """
             """).encode()
-        return ifcfg_ens4
+        return interface
     
 
 
@@ -115,14 +127,14 @@ class OpenshiftOnBareMetal:
 
 
             interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
-            ifcfg_ens4 = self.create_interface_with_bond(self.aci_infra_network_interface[0], "bond0", self.opflex_network_mtu)
-            ifcfg_ens4_b64 = base64.standard_b64encode(ifcfg_ens4).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens4_b64, 'path': '/etc/sysconfig/network-scripts/'+ interface_name}
+            infra_network_interface1 = self.create_interface_with_bond(self.aci_infra_network_interface[0], "bond0", self.opflex_network_mtu)
+            infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
+            config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/'+ interface_name}
 
             interface_name = "ifcfg-" + self.aci_infra_network_interface[1]
-            ifcfg_ens5 = self.create_interface_with_bond(self.aci_infra_network_interface[1], "bond0", self.opflex_network_mtu)
-            ifcfg_ens5_b64 = base64.standard_b64encode(ifcfg_ens5).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens5_b64, 'path': '/etc/sysconfig/network-scripts/' +  interface_name}
+            infra_network_interface2 = self.create_interface_with_bond(self.aci_infra_network_interface[1], "bond0", self.opflex_network_mtu)
+            infra_network_interface2_b64 = base64.standard_b64encode(infra_network_interface2).decode().strip()
+            config_data[interface_name] = {'base64': infra_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' +  interface_name}
 
             opflex_conn = ("""VLAN=yes
         TYPE=Vlan
@@ -165,15 +177,15 @@ class OpenshiftOnBareMetal:
             config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
 
             interface_name = "ifcfg-" + self.node_network_interface[0]
-            ifcfg_ens4 = self.create_interface_with_bond(self.node_network_interface[0], "bond0", self.node_network_mtu)
-            ifcfg_ens4_b64 = base64.standard_b64encode(ifcfg_ens4).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens4_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+            node_network_interface1 = self.create_interface_with_bond(self.node_network_interface[0], "bond0", self.node_network_mtu)
+            node_network_interface1_b64 = base64.standard_b64encode(node_network_interface1).decode().strip()
+            config_data[interface_name] = {'base64': node_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
             interface_name = "ifcfg-" + self.node_network_interface[1]
              
-            ifcfg_ens5 = self.create_interface_with_bond(self.node_network_interface[1], "bond0", self.node_network_mtu)
-            ifcfg_ens5_b64 = base64.standard_b64encode(ifcfg_ens5).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens5_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+            node_network_interface2 = self.create_interface_with_bond(self.node_network_interface[1], "bond0", self.node_network_mtu)
+            node_network_interface2_b64 = base64.standard_b64encode(node_network_interface2).decode().strip()
+            config_data[interface_name] = {'base64': node_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
 
 
@@ -182,15 +194,15 @@ class OpenshiftOnBareMetal:
             config_data['ifcfg_bond1'] = {'base64': ifcfg_bond1_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond1'}
 
             interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
-            ifcfg_ens2 = self.create_interface_with_bond(self.aci_infra_network_interface[0], "bond1", self.opflex_network_mtu)
-            ifcfg_ens2_b64 = base64.standard_b64encode(ifcfg_ens2).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens2_b64, 'path': '/etc/sysconfig/network-scripts/'  + interface_name}
+            infra_network_interface1 = self.create_interface_with_bond(self.aci_infra_network_interface[0], "bond1", self.opflex_network_mtu)
+            infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
+            config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/'  + interface_name}
              
             interface_name = "ifcfg-" + self.aci_infra_network_interface[1]
 
-            ifcfg_ens3 = self.create_interface_with_bond(self.aci_infra_network_interface[1], "bond1", self.opflex_network_mtu)
-            ifcfg_ens3_b64 = base64.standard_b64encode(ifcfg_ens3).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens3_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+            infra_network_interface2 = self.create_interface_with_bond(self.aci_infra_network_interface[1], "bond1", self.opflex_network_mtu)
+            infra_network_interface2_b64 = base64.standard_b64encode(infra_network_interface2).decode().strip()
+            config_data[interface_name] = {'base64': infra_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
             opflex_conn = ("""VLAN=yes
         TYPE=Vlan
@@ -236,19 +248,19 @@ class OpenshiftOnBareMetal:
 
             interface_name = "ifcfg-" + self.node_network_interface[0]
 
-            ifcfg_ens4 = self.create_interface_with_bond(self.node_network_interface[0], "bond0", self.node_network_mtu)
-            ifcfg_ens4_b64 = base64.standard_b64encode(ifcfg_ens4).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens4_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+            node_network_interface1 = self.create_interface_with_bond(self.node_network_interface[0], "bond0", self.node_network_mtu)
+            node_network_interface1_b64 = base64.standard_b64encode(node_network_interface1).decode().strip()
+            config_data[interface_name] = {'base64': node_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
             
             interface_name = "ifcfg-" + self.node_network_interface[1]
-            ifcfg_ens5 = self.create_interface_with_bond(self.node_network_interface[1], "bond0", self.node_network_mtu)
-            ifcfg_ens5_b64 = base64.standard_b64encode(ifcfg_ens5).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens5_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+            node_network_interface2 = self.create_interface_with_bond(self.node_network_interface[1], "bond0", self.node_network_mtu)
+            node_network_interface2_b64 = base64.standard_b64encode(node_network_interface2).decode().strip()
+            config_data[interface_name] = {'base64': node_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
             interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
-            ifcfg_ens6 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
-            ifcfg_ens6_b64 = base64.standard_b64encode(ifcfg_ens6).decode().strip()
-            config_data[interface_name] = {'base64': ifcfg_ens6_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
+            infra_network_interface1 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
+            infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
+            config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
 
             opflex_conn = ("""VLAN=yes
@@ -286,9 +298,9 @@ class OpenshiftOnBareMetal:
             
             """single interface for both node and infra networks"""
 
-            ifcfg_ens6 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
-            ifcfg_ens6_b64 = base64.standard_b64encode(ifcfg_ens6).decode().strip()
-            config_data['ifcfg_ens6'] = {'base64': ifcfg_ens6_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-ens6'}
+            infra_network_interface1 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
+            infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
+            config_data['ifcfg_ens6'] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-ens6'}
 
             
             opflex_conn = ("""VLAN=yes
