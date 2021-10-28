@@ -49,7 +49,6 @@ import yaml
 from jinja2 import Environment, FileSystemLoader
 
 
-
 class OpenshiftOnBareMetal:
 
     def __init__(self):
@@ -102,6 +101,7 @@ class OpenshiftOnBareMetal:
             """).encode()
         return interface
 
+
     def create_interface(self, interface_name, mtu):
         interface = ("""NAME=""" + interface_name +"""
             TYPE=Ethernet
@@ -111,7 +111,6 @@ class OpenshiftOnBareMetal:
             MTU=""" + mtu + """
             """).encode()
         return interface
-    
 
 
     def update(self, hostname,ignition, choice):
@@ -171,7 +170,6 @@ class OpenshiftOnBareMetal:
         elif choice == 2:
             """  Bond interface for both node and infra networks """
 
-
             ifcfg_bond0 = self.create_bond("bond0", self.node_network_mtu)
             ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
             config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
@@ -186,7 +184,6 @@ class OpenshiftOnBareMetal:
             node_network_interface2 = self.create_interface_with_bond(self.node_network_interface[1], "bond0", self.node_network_mtu)
             node_network_interface2_b64 = base64.standard_b64encode(node_network_interface2).decode().strip()
             config_data[interface_name] = {'base64': node_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
-
 
 
             ifcfg_bond1 = self.create_bond("bond1", self.opflex_network_mtu)
@@ -235,8 +232,6 @@ class OpenshiftOnBareMetal:
             route_opflex_conn_b64 = base64.standard_b64encode(route_opflex_conn).decode().strip()
 
             config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
-
-
 
         elif choice == 3:
 
@@ -335,9 +330,6 @@ class OpenshiftOnBareMetal:
             config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
 
 
-
-
-
         if 'storage' not in ignition.keys():
             ignition['storage'] = {}
         files = ignition['storage'].get('files', [])
@@ -373,10 +365,6 @@ class OpenshiftOnBareMetal:
         return ignition
 
 
-            
-
-
-
 if __name__ == "__main__":
     print("""
         1.Single interface for node network and bond interface for infra network
@@ -395,7 +383,6 @@ if __name__ == "__main__":
         choice = 4
     else:
         print("\n   Invalid Option, Please Try Again")
-
 
 
     infra_id = os.environ.get('INFRA_ID', 'openshift').encode()
@@ -424,5 +411,3 @@ if __name__ == "__main__":
         ignition = openshiftOnBaremetal.update(master_hostname,ignition, choice)
         with open(infra_id.decode() + '-worker-' + str(index) + '-ignition.json', 'w') as f:
             json.dump(ignition, f)
-
-
