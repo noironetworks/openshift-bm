@@ -263,9 +263,10 @@ class OpenshiftOnBareMetal:
         else:
             """single interface for both node and infra networks"""
 
+            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
             infra_network_interface1 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
             infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
-            config_data['ifcfg_ens6'] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-ens6'}
+            config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/'+ interface_name}
             self.create_opflex_connection_without_bond(config_data)
 
         if 'storage' not in ignition.keys():
