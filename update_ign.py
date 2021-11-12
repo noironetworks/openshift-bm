@@ -28,13 +28,17 @@
 #                    4.Single interface for both node and infra networks
 #
 #
-#               currently we support option one only(please update interface name in config.yaml file)
+#               
+#               Please update the config.yaml as follows:
+#                    case 1: Please provide single node network interface name  and two aci infra network interface name in config.yaml file
+#                    case 2: Please provide two node network interface name  and two aci infra network interface name in config.yaml file
+#                    case 3: Please provide two node network interface name  and single aci infra network interface name in config.yaml file
+#                    case 4: Please provide single node network interface name  and single aci infra network interface name in config.yaml file
 
 
-# How to run this script: 
-#           Please update the config.yaml file before running this script
-#           Trigger the command after changing config.yaml file according to requirement:   python3 update_ign.py
 
+# How to run this script: python3 update_ign.py
+#          
 # Expected Output: Igniton files for each of the nodes including the bootstrap with the names: <Infra-Id>-bootstrap|master|worker-<index>-ignition.json
 
 # What to do after running this script: Copy the generated ignition files to directory where they will be served from at install time, and proceed with
