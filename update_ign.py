@@ -14,18 +14,11 @@
 #
 # Ignition file names follow the convention:  <Infra-Id>-bootstrap|master|worker-<index>-ignition.json 
 #
-# Network interfaces: This script assumes that each node has three interfaces -
-#                     - one for node Network
-#                     - the second and third in bonded configuration for the ACI Infra Network (the pod traffic also goes over this) 
-#                     If the nodes have only two network inferfaces, then there can be no bonding. Similarly, if the node
-#                     has four or more interfaces then you can choose to have bonded pairs for both the node and infra networks.
-#                     In either of those cases this script will have to be modified to account for those differences.
-
-#               we will have following option to choose from 
-#                    1.Single interface for node network and bond interface for infra network
-#                    2.Bond interface for both node and infra networks
-#                    3.Bond interface for node network and single interface for infra network
-#                    4.Single interface for both node and infra networks
+# Network interfaces:  We will have following option to choose from 
+#                       1.Single interface for node network and bond interface for infra network
+#                       2.Bond interface for both node and infra networks
+#                       3.Bond interface for node network and single interface for infra network
+#                       4.Single interface for both node and infra networks
 #
 #
 #               
