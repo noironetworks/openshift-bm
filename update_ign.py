@@ -124,7 +124,7 @@ class OpenshiftOnBareMetal:
             IPV4_FAILURE_FATAL=no
             IPV6INIT=no
             NAME=opflex-conn
-            DEVICE= """ + self.aci_infra_network_interface[0] +"."+ self.infra_vlan + """
+            DEVICE=""" + self.aci_infra_network_interface[0] +"."+ self.infra_vlan + """
             ONBOOT=yes
             MTU=""" + self.opflex_network_mtu + """
             """).encode()
