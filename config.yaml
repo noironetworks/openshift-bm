@@ -9,4 +9,9 @@ all:
      mtu: 1700
   os_compute_nodes_number: 2
   os_cp_nodes_number: 3
-
+  node_network_interface:
+    - ens2
+    - ens3
+  aci_infra_network_interface:
+    - ens4
+    - ens5
