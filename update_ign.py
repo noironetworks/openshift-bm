@@ -179,6 +179,10 @@ class OpenshiftOnBareMetal:
             ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
             config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
 
+            interface_name = "ifcfg-" + self.node_network_interface[0]
+            node_network_interface1 = self.create_interface(self.node_network_interface[0], self.node_network_mtu)
+            node_network_interface1_b64 = base64.standard_b64encode(node_network_interface1).decode().strip()
+            config_data[interface_name] = {'base64': node_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
             interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
             infra_network_interface1 = self.create_slave_interface(self.aci_infra_network_interface[0], "bond0", self.opflex_network_mtu)
@@ -255,6 +259,11 @@ class OpenshiftOnBareMetal:
             self.create_opflex_connection_without_bond(config_data)
         else:
             """single interface for both node and infra networks"""
+
+            interface_name = "ifcfg-" + self.node_network_interface[0]
+            node_network_interface1 = self.create_interface(self.node_network_interface[0], self.node_network_mtu)
+            node_network_interface1_b64 = base64.standard_b64encode(node_network_interface1).decode().strip()
+            config_data[interface_name] = {'base64': node_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
             interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
             infra_network_interface1 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
