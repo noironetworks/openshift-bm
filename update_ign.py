@@ -1,42 +1,3 @@
-# This script is based on the information provided here:
-# https://github.com/openshift/installer/blob/release-4.7/docs/user/openstack/install_upi.md
-#
-# Before running this script please update the config.yaml in this directory
-
-# This script does the following:
-#  Inserts hostname into the boostrap.ign
-#  Creates the ignition files for each master and worker node, and inserts the hostname and network-scripts into those
-
-# Assumptions:
-# Interface names in RHCOS-4.x based nodes have the inteface naming convention: ens2, ens4, ens5
-#
-# Hostnames are assigned by this script using the convention: <Infra-Id>-<bootstrap|master|worker>-<Number>
-#
-# Ignition file names follow the convention:  <Infra-Id>-bootstrap|master|worker-<index>-ignition.json 
-#
-# Network interfaces:  We will have following option to choose from 
-#                       1.Single interface for node network and bond interface for infra network
-#                       2.Bond interface for both node and infra networks
-#                       3.Bond interface for node network and single interface for infra network
-#                       4.Single interface for both node and infra networks
-#
-#
-#               
-#               Please update the config.yaml as follows:
-#                    case 1: Please provide single node network interface name  and two aci infra network interface name in config.yaml file
-#                    case 2: Please provide two node network interface name  and two aci infra network interface name in config.yaml file
-#                    case 3: Please provide two node network interface name  and single aci infra network interface name in config.yaml file
-#                    case 4: Please provide single node network interface name  and single aci infra network interface name in config.yaml file
-
-
-
-# How to run this script: python3 update_ign.py
-#          
-# Expected Output: Igniton files for each of the nodes including the bootstrap with the names: <Infra-Id>-bootstrap|master|worker-<index>-ignition.json
-
-# What to do after running this script: Copy the generated ignition files to directory where they will be served from at install time, and proceed with
-# the installation.
-
 import base64
 import json
 import os
@@ -61,12 +22,12 @@ class OpenshiftOnBareMetal:
         self.infra_vlan = str(inventory['infra_vlan'])
         self.service_vlan = str(inventory['service_vlan'])
         self.kubeapi_vlan = str(inventory['kubeapi_vlan'])
-        self.master_count = inventory['os_cp_nodes_number']
-        self.worker_count = inventory['os_compute_nodes_number']
         self.node_network_mtu = str(inventory['network_interfaces']['node']['mtu'])
         self.opflex_network_mtu = str(inventory['network_interfaces']['opflex']['mtu'])
-        self.node_network_interface = list(inventory["node_network_interface"])
-        self.aci_infra_network_interface = list(inventory["aci_infra_network_interface"])
+        self.cp_node_network_interface = list(inventory['os_cp_nodes']['node_network_interface'])
+        self.cp_aci_infra_network_interface = list(inventory['os_cp_nodes']['aci_infra_network_interface'])
+        self.compute_node_network_interface = list(inventory['os_compute_nodes']['node_network_interface'])
+        self.compute_aci_infra_network_interface = list(inventory['os_compute_nodes']['aci_infra_network_interface'])
 
 
     def create_bond(self, bond_name, mtu):
@@ -75,7 +36,7 @@ class OpenshiftOnBareMetal:
             DEVICE=""" + bond_name + """
             ONBOOT=yes
             NETBOOT=yes
-            BOOTPROTO=none
+            BOOTPROTO=dhcp
             BONDING_MASTER=yes
             BONDING_OPTS="mode=4 miimon=100 lacp_rate=1"
             NAME=""" + bond_name + """
@@ -109,7 +70,8 @@ class OpenshiftOnBareMetal:
             """).encode()
         return interface
 
-    def create_opflex_connection_without_bond(self, config_data):
+
+    def create_opflex_connection_without_bond(self, config_data, aci_infra_network_interface):
 
         opflex_conn = ("""VLAN=yes
             TYPE=Vlan
@@ -124,7 +86,7 @@ class OpenshiftOnBareMetal:
             IPV4_FAILURE_FATAL=no
             IPV6INIT=no
             NAME=opflex-conn
-            DEVICE=""" + self.aci_infra_network_interface[0] +"."+ self.infra_vlan + """
+            DEVICE=""" + aci_infra_network_interface +"."+ self.infra_vlan + """
             ONBOOT=yes
             MTU=""" + self.opflex_network_mtu + """
             """).encode()
@@ -169,7 +131,14 @@ class OpenshiftOnBareMetal:
         config_data['route_opflex_conn'] = {'base64': route_opflex_conn_b64, 'path': '/etc/sysconfig/network-scripts/route-opflex-conn'}
 
 
-    def update(self, hostname,ignition, choice):
+    def update(self, ignition, node_type, choice):
+
+        if node_type == "master":
+            aci_infra_network_interface = self.cp_aci_infra_network_interface
+            node_network_interface = self.cp_node_network_interface
+        else:
+            aci_infra_network_interface = self.compute_aci_infra_network_interface
+            node_network_interface = self.compute_node_network_interface          
 
         config_data = {}
         if choice == 1:
@@ -179,14 +148,13 @@ class OpenshiftOnBareMetal:
             ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
             config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
 
-
-            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
-            infra_network_interface1 = self.create_slave_interface(self.aci_infra_network_interface[0], "bond0", self.opflex_network_mtu)
+            interface_name = "ifcfg-" + aci_infra_network_interface[0]
+            infra_network_interface1 = self.create_slave_interface(aci_infra_network_interface[0], "bond0", self.opflex_network_mtu)
             infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
             config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/'+ interface_name}
 
-            interface_name = "ifcfg-" + self.aci_infra_network_interface[1]
-            infra_network_interface2 = self.create_slave_interface(self.aci_infra_network_interface[1], "bond0", self.opflex_network_mtu)
+            interface_name = "ifcfg-" + aci_infra_network_interface[1]
+            infra_network_interface2 = self.create_slave_interface(aci_infra_network_interface[1], "bond0", self.opflex_network_mtu)
             infra_network_interface2_b64 = base64.standard_b64encode(infra_network_interface2).decode().strip()
             config_data[interface_name] = {'base64': infra_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' +  interface_name}
 
@@ -199,85 +167,72 @@ class OpenshiftOnBareMetal:
             ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
             config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
 
-            interface_name = "ifcfg-" + self.node_network_interface[0]
-            node_network_interface1 = self.create_slave_interface(self.node_network_interface[0], "bond0", self.node_network_mtu)
+            interface_name = "ifcfg-" + node_network_interface[0]
+            node_network_interface1 = self.create_slave_interface(node_network_interface[0], "bond0", self.node_network_mtu)
             node_network_interface1_b64 = base64.standard_b64encode(node_network_interface1).decode().strip()
             config_data[interface_name] = {'base64': node_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
-            interface_name = "ifcfg-" + self.node_network_interface[1]
-             
-            node_network_interface2 = self.create_slave_interface(self.node_network_interface[1], "bond0", self.node_network_mtu)
+            interface_name = "ifcfg-" + node_network_interface[1] 
+            node_network_interface2 = self.create_slave_interface(node_network_interface[1], "bond0", self.node_network_mtu)
             node_network_interface2_b64 = base64.standard_b64encode(node_network_interface2).decode().strip()
             config_data[interface_name] = {'base64': node_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
-
-
+ 
             ifcfg_bond1 = self.create_bond("bond1", self.opflex_network_mtu)
             ifcfg_bond1_b64 = base64.standard_b64encode(ifcfg_bond1).decode().strip()
             config_data['ifcfg_bond1'] = {'base64': ifcfg_bond1_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond1'}
 
-            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
-            infra_network_interface1 = self.create_slave_interface(self.aci_infra_network_interface[0], "bond1", self.opflex_network_mtu)
+            interface_name = "ifcfg-" + aci_infra_network_interface[0]
+            infra_network_interface1 = self.create_slave_interface(aci_infra_network_interface[0], "bond1", self.opflex_network_mtu)
             infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
             config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/'  + interface_name}
              
-            interface_name = "ifcfg-" + self.aci_infra_network_interface[1]
-
-            infra_network_interface2 = self.create_slave_interface(self.aci_infra_network_interface[1], "bond1", self.opflex_network_mtu)
+            interface_name = "ifcfg-" + aci_infra_network_interface[1]
+            infra_network_interface2 = self.create_slave_interface(aci_infra_network_interface[1], "bond1", self.opflex_network_mtu)
             infra_network_interface2_b64 = base64.standard_b64encode(infra_network_interface2).decode().strip()
             config_data[interface_name] = {'base64': infra_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
             self.create_opflex_connection_with_bond("bond1", config_data)
 
         elif choice == 3:
-
             """ Bond interface for node network and single interface for infra network"""
             
             ifcfg_bond0 = self.create_bond("bond0", self.node_network_mtu)
             ifcfg_bond0_b64 = base64.standard_b64encode(ifcfg_bond0).decode().strip()
             config_data['ifcfg_bond0'] = {'base64': ifcfg_bond0_b64, 'path': '/etc/sysconfig/network-scripts/ifcfg-bond0'}
 
-            interface_name = "ifcfg-" + self.node_network_interface[0]
-
-            node_network_interface1 = self.create_slave_interface(self.node_network_interface[0], "bond0", self.node_network_mtu)
+            interface_name = "ifcfg-" + node_network_interface[0]
+            node_network_interface1 = self.create_slave_interface(node_network_interface[0], "bond0", self.node_network_mtu)
             node_network_interface1_b64 = base64.standard_b64encode(node_network_interface1).decode().strip()
             config_data[interface_name] = {'base64': node_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
             
-            interface_name = "ifcfg-" + self.node_network_interface[1]
-            node_network_interface2 = self.create_slave_interface(self.node_network_interface[1], "bond0", self.node_network_mtu)
+            interface_name = "ifcfg-" + node_network_interface[1]
+            node_network_interface2 = self.create_slave_interface(node_network_interface[1], "bond0", self.node_network_mtu)
             node_network_interface2_b64 = base64.standard_b64encode(node_network_interface2).decode().strip()
             config_data[interface_name] = {'base64': node_network_interface2_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
-            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
-            infra_network_interface1 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
+            interface_name = "ifcfg-" + aci_infra_network_interface[0]
+            infra_network_interface1 = self.create_interface(aci_infra_network_interface[0], self.opflex_network_mtu)
             infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
             config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/' + interface_name}
 
-            self.create_opflex_connection_without_bond(config_data)
+            self.create_opflex_connection_without_bond(config_data, aci_infra_network_interface[0])
+        
         else:
             """single interface for both node and infra networks"""
 
-            interface_name = "ifcfg-" + self.aci_infra_network_interface[0]
-            infra_network_interface1 = self.create_interface(self.aci_infra_network_interface[0], self.opflex_network_mtu)
+            interface_name = "ifcfg-" + aci_infra_network_interface[0]
+            infra_network_interface1 = self.create_interface(aci_infra_network_interface[0], self.opflex_network_mtu)
             infra_network_interface1_b64 = base64.standard_b64encode(infra_network_interface1).decode().strip()
             config_data[interface_name] = {'base64': infra_network_interface1_b64, 'path': '/etc/sysconfig/network-scripts/'+ interface_name}
-            self.create_opflex_connection_without_bond(config_data)
+            
+            self.create_opflex_connection_without_bond(config_data, aci_infra_network_interface[0])
+
 
         if 'storage' not in ignition.keys():
             ignition['storage'] = {}
         files = ignition['storage'].get('files', [])
-        hostname_b64 = base64.standard_b64encode(hostname).decode().strip()
-        files.append(
-            {
-                'path': '/etc/hostname',
-                'mode': 420,
-                'contents': {
-                    'source': 'data:text/plain;charset=utf-8;base64,' + hostname_b64,
-                    'verification': {}
-                },
-                'filesystem': 'root',
-            })
 
-        if 'bootstrap' not in hostname.decode():
+        if "bootstrap" not in node_type:
 
             for interface, interface_config in config_data.items():
                 files.append(
@@ -290,7 +245,6 @@ class OpenshiftOnBareMetal:
                     },
                     'filesystem': 'root',
                 })
-
 
 
         ignition['storage']['files'] = files
@@ -323,23 +277,18 @@ if __name__ == "__main__":
 
     with open('bootstrap.ign', 'r') as f:
         ignition = json.load(f)
-    bootstrap_hostname = infra_id + b'-bootstrap\n'
-    ignition = openshiftOnBaremetal.update(bootstrap_hostname,ignition, choice)
+    ignition = openshiftOnBaremetal.update(ignition, "bootstrap", choice)
     with open('bootstrap.ign', 'w') as f:
         json.dump(ignition, f)
 
-    for index in range(0, openshiftOnBaremetal.master_count):
-        master_hostname = infra_id + b'-master-' + str(index).encode() + b'\n'
-        with open('master.ign', 'r') as f:
-            ignition = json.load(f)
-        ignition = openshiftOnBaremetal.update(master_hostname,ignition, choice)
-        with open(infra_id.decode() + '-master-' + str(index) + '-ignition.json', 'w') as f:
-            json.dump(ignition, f)
+    with open('master.ign', 'r') as f:
+        ignition = json.load(f)
+    ignition = openshiftOnBaremetal.update(ignition, "master", choice)
+    with open(infra_id.decode() + '-master-ignition.json', 'w') as f:
+        json.dump(ignition, f)
 
-    for index in range(0, openshiftOnBaremetal.worker_count):
-        master_hostname = infra_id + b'-worker-' + str(index).encode() + b'\n'
-        with open('worker.ign', 'r') as f:
-            ignition = json.load(f)
-        ignition = openshiftOnBaremetal.update(master_hostname,ignition, choice)
-        with open(infra_id.decode() + '-worker-' + str(index) + '-ignition.json', 'w') as f:
-            json.dump(ignition, f)
+    with open('worker.ign', 'r') as f:
+        ignition = json.load(f)
+    ignition = openshiftOnBaremetal.update(ignition, "worker", choice)
+    with open(infra_id.decode() + '-worker-ignition.json', 'w') as f:
+        json.dump(ignition, f)
